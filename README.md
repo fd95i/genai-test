@@ -7,7 +7,8 @@ Proyecto base implementado en Go utilizando arquitectura hexagonal (ports & adap
 - [Arquitectura](#arquitectura)
 - [Estructura del Proyecto](#estructura-del-proyecto)
 - [Componentes](#componentes)
-- [Flujo de Ejecución](#flujo-de-ejecución)
+- [Diagramas de Flujo](#-diagramas-de-flujo)
+- [Flujo de Ejecución Completo](#-flujo-de-ejecución-completo)
 - [Instalación](#instalación)
 - [Uso](#uso)
 - [Endpoints](#endpoints)
@@ -157,25 +158,190 @@ func main() {
 - Maneja errores de inicialización y ejecución
 - Ejecuta `Application.Run()`
 
-## 🔄 Flujo de Ejecución
+## 📊 Diagramas de Flujo
 
+### Diagrama General de Arquitectura Hexagonal
+
+```mermaid
+graph TB
+    subgraph "External World"
+        HTTP[HTTP Clients]
+    end
+    
+    subgraph "Infrastructure Layer"
+        Router[Router<br/>Gin Adapter]
+        AppImpl[App Implementation]
+        Factory[Factory<br/>Config]
+    end
+    
+    subgraph "Application Layer"
+        AppInterface[Application Interface<br/>Port]
+    end
+    
+    subgraph "Domain Layer"
+        Entities[Domain Entities<br/>Business Rules]
+    end
+    
+    HTTP -->|HTTP Requests| Router
+    Router -->|Uses| AppImpl
+    AppImpl -.->|Implements| AppInterface
+    Factory -->|Builds| Router
+    Factory -->|Builds| AppImpl
+    AppImpl -->|Orchestrates| Entities
+    
+    style Router fill:#e1f5ff
+    style AppImpl fill:#e1f5ff
+    style Factory fill:#e1f5ff
+    style AppInterface fill:#fff4e1
+    style Entities fill:#ffe1f5
 ```
-main.go
-  │
-  ├─> config.BuildApplication()
-  │     │
-  │     ├─> router.NewRouter()
-  │     │     ├─> gin.Default()
-  │     │     └─> setupRoutes() → GET /health
-  │     │
-  │     ├─> appInfra.NewApp(router)
-  │     │     └─> App{router: router}
-  │     │
-  │     └─> app.Start() → inicialización
-  │
-  └─> app.Run() → router.GetEngine().Run()
-                      │
-                      └─> Servidor HTTP escuchando en :8080
+
+### Flujo de la Capa Domain
+
+```mermaid
+flowchart TD
+    Start([Domain Layer]) --> Entities[Domain Entities]
+    Entities --> Rules[Business Rules]
+    Rules --> Validation[Domain Validation]
+    Validation --> Events[Domain Events]
+    Events --> End([Pure Business Logic])
+    
+    style Start fill:#ffe1f5
+    style Entities fill:#ffe1f5
+    style Rules fill:#ffe1f5
+    style Validation fill:#ffe1f5
+    style Events fill:#ffe1f5
+    style End fill:#ffe1f5
+```
+
+### Flujo de la Capa Application
+
+```mermaid
+flowchart TD
+    Start([Application Layer]) --> Interface[Define Application Interface]
+    Interface --> Methods[Start error<br/>Run error]
+    Methods --> Contracts[Define Ports/Contracts]
+    Contracts --> UseCases[Use Cases<br/>Business Logic Orchestration]
+    UseCases --> End([Application Layer Ready])
+    
+    style Start fill:#fff4e1
+    style Interface fill:#fff4e1
+    style Methods fill:#fff4e1
+    style Contracts fill:#fff4e1
+    style UseCases fill:#fff4e1
+    style End fill:#fff4e1
+```
+
+### Flujo de la Capa Infrastructure - Factory
+
+```mermaid
+flowchart TD
+    Start([Factory: BuildApplication]) --> CreateRouter[Create Router<br/>router.NewRouter]
+    CreateRouter --> CreateApp[Create App<br/>appInfra.NewApp]
+    CreateApp --> InitApp[Initialize App<br/>app.Start]
+    InitApp --> CheckError{Error?}
+    CheckError -->|Yes| ReturnError[Return Error]
+    CheckError -->|No| ReturnApp[Return Application]
+    ReturnApp --> End([Application Ready])
+    ReturnError --> End
+    
+    style Start fill:#e1f5ff
+    style CreateRouter fill:#e1f5ff
+    style CreateApp fill:#e1f5ff
+    style InitApp fill:#e1f5ff
+    style ReturnApp fill:#e1f5ff
+    style End fill:#e1f5ff
+```
+
+### Flujo de la Capa Infrastructure - Router
+
+```mermaid
+flowchart TD
+    Start([Router: NewRouter]) --> SetMode[Set Gin Mode<br/>Release Mode]
+    SetMode --> CreateEngine[Create Gin Engine<br/>gin.Default]
+    CreateEngine --> CreateStruct[Create Router Struct]
+    CreateStruct --> SetupRoutes[Setup Routes<br/>setupRoutes]
+    SetupRoutes --> HealthRoute[Configure /health GET]
+    HealthRoute --> ReturnRouter[Return Router Instance]
+    ReturnRouter --> End([Router Ready])
+    
+    Request([HTTP Request]) --> MatchRoute{Match Route?}
+    MatchRoute -->|/health| HealthHandler[healthHandler]
+    HealthHandler --> ReturnJSON[Return JSON<br/>status: UP]
+    MatchRoute -->|Other| NotFound[404 Not Found]
+    
+    style Start fill:#e1f5ff
+    style CreateEngine fill:#e1f5ff
+    style SetupRoutes fill:#e1f5ff
+    style HealthHandler fill:#e1f5ff
+    style ReturnJSON fill:#e1f5ff
+    style End fill:#e1f5ff
+```
+
+### Flujo de la Capa Infrastructure - Application Implementation
+
+```mermaid
+flowchart TD
+    Start([App: NewApp]) --> ReceiveRouter[Receive Router]
+    ReceiveRouter --> CreateStruct[Create App Struct<br/>router: Router]
+    CreateStruct --> End([App Instance Created])
+    
+    StartMethod([App.Start]) --> InitServices[Initialize Services<br/>DB Connections, etc]
+    InitServices --> CheckInit{Error?}
+    CheckInit -->|Yes| ReturnInitError[Return Error]
+    CheckInit -->|No| ReturnInitSuccess[Return nil]
+    
+    RunMethod([App.Run]) --> GetEngine[Get Gin Engine<br/>router.GetEngine]
+    GetEngine --> StartServer[Start HTTP Server<br/>engine.Run]
+    StartServer --> Listen[Listen on :8080]
+    Listen --> HandleRequests[Handle HTTP Requests]
+    
+    style Start fill:#e1f5ff
+    style CreateStruct fill:#e1f5ff
+    style StartMethod fill:#e1f5ff
+    style RunMethod fill:#e1f5ff
+    style StartServer fill:#e1f5ff
+    style End fill:#e1f5ff
+```
+
+## 🔄 Flujo de Ejecución Completo
+
+```mermaid
+sequenceDiagram
+    participant Main as main.go
+    participant Factory as Factory
+    participant Router as Router
+    participant App as App Implementation
+    participant Gin as Gin Engine
+    participant Client as HTTP Client
+    
+    Main->>Factory: BuildApplication()
+    Factory->>Router: NewRouter()
+    Router->>Gin: gin.Default()
+    Router->>Router: setupRoutes()
+    Router->>Router: GET /health
+    Router-->>Factory: Router instance
+    
+    Factory->>App: NewApp(router)
+    App->>App: Create App struct
+    App-->>Factory: App instance
+    
+    Factory->>App: Start()
+    App->>App: Initialize services
+    App-->>Factory: nil (success)
+    
+    Factory-->>Main: Application instance
+    
+    Main->>App: Run()
+    App->>Router: GetEngine()
+    Router-->>App: *gin.Engine
+    App->>Gin: Run()
+    Gin->>Gin: Listen :8080
+    
+    Client->>Gin: GET /health
+    Gin->>Router: Route to handler
+    Router->>Router: healthHandler()
+    Router-->>Client: {"status":"UP"}
 ```
 
 ## 📦 Instalación
